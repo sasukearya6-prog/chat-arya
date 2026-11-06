@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Chat App V2</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+  html, body { height: 100%; height: 100dvh; overflow: hidden; background: #0f172a; color: #fff; }
+  body { display: flex; flex-direction: column; }
+
+  #login-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100dvh; padding: 20px; }
+  #login-screen h1 { margin-bottom: 20px; color: #38bdf8; }
+  #login-screen input { padding: 12px; width: 100%; max-width: 300px; border-radius: 8px; border: none; margin-bottom: 15px; font-size: 16px; outline: none; }
+  #login-screen button { padding: 12px 24px; background: #38bdf8; color: #000; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; width: 100%; max-width: 300px; font-size: 16px; }
+
+  #app-screen { display: none; flex-direction: column; height: 100dvh; width: 100vw; }
+  .header { background: #1e293b; padding: 15px; font-size: 18px; font-weight: bold; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .logout-btn { background: #ef4444; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+  .owner-badge { background: #f59e0b; color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+  .group-badge { background: #a855f7; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle; }
+  
+  .chat-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .chat-item { padding: 15px; background: #1e293b; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+  .avatar { width: 40px; height: 40px; background: #38bdf8; color: #000; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 18px; text-transform: uppercase; flex-shrink: 0;}
+  .avatar.grp { background: #a855f7; color: #fff; }
+  .chat-info { flex: 1; overflow: hidden; }
+  .chat-name { font-weight: bold; text-transform: capitalize; display: flex; align-items: center;}
+  .chat-preview { font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+  
+  .fab-container { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 5; align-items: flex-end;}
+  .fab { width: 60px; height: 60px; background: #38bdf8; color: #000; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 30px; font-weight: bold; cursor: pointer; border: none; box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.2s; }
+  .fab:active { transform: scale(0.9); }
+  .fab-menu { display: none; flex-direction: column; gap: 10px; margin-bottom: 5px;}
+  .fab-menu button { background: #1e293b; color: #fff; border: 1px solid #334155; padding: 12px 18px; border-radius: 8px; cursor: pointer; text-align: left; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(0,0,0,0.2);}
+  .fab-menu button:hover { background: #334155; }
+
+  #room-screen { display: none; flex-direction: column; height: 100dvh; width: 100vw; position: fixed; top: 0; left: 0; background: #0f172a; z-index: 10; }
+  .room-header { background: #1e293b; padding: 15px; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #334155; flex-shrink: 0; }
+  .back-btn { background: none; border: none; color: #38bdf8; font-size: 24px; cursor: pointer; display: flex; align-items: center; }
+  .room-name { font-weight: bold; text-transform: capitalize; }
+  
+  .messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 15px; word-wrap: break-word; }
+  .msg.sent { background: #38bdf8; color: #000; align-self: flex-end; border-bottom-right-radius: 2px;}
+  .msg.received { background: #1e293b; align-self: flex-start; border-bottom-left-radius: 2px;}
+  .msg img, .msg video { max-width: 100%; border-radius: 8px; margin-top: 5px; }
+  .msg audio { width: 100%; margin-top: 5px; outline: none; }
+  .sender-name { font-size: 11px; font-weight: bold; color: #a855f7; margin-bottom: 3px; }
+  
+  .input-area { display: flex; padding: 10px; background: #1e293b; gap: 8px; flex-shrink: 0; align-items: center; position: relative; }
+  .input-area input[type="text"] { flex: 1; padding: 12px; border-radius: 20px; border: none; background: #334155; color: #fff; outline: none; font-size: 15px; }
+  .file-btn { background: #334155; color: #fff; border: none; border-radius: 50%; width: 45px; height: 45px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; font-size: 20px; flex-shrink: 0; }
+  .send-btn { background: #38bdf8; color: #000; border: none; border-radius: 50%; width: 45px; height: 45px; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; font-size: 18px; flex-shrink: 0; }
+  
+  .typing-indicator { display: none; font-size: 12px; color: #94a3b8; padding: 0 15px 10px 15px; align-items: center; gap: 5px;}
+  .dot { width: 5px; height: 5px; background-color: #94a3b8; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+  .dot:nth-child(1) { animation-delay: -0.32s; }
+  .dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+</style>
+</head>
+<body>
+
+  <div id="login-screen">
+    <h1>Masuk Chat V2</h1>
+    <input type="text" id="username-input" placeholder="Masukkan Username..." autocomplete="off">
+    <button onclick="login()">Masuk</button>
+  </div>
+
+  <div id="app-screen">
+    <div class="header">
+      <span id="my-name">User</span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+    <div class="chat-list" id="chat-list">
+      <div style="text-align:center; color:#64748b; margin-top:50px;" id="empty-text">Belum ada chat. Klik tombol + untuk memulai.</div>
+    </div>
+    
+    <div class="fab-container">
+      <div class="fab-menu" id="fab-menu">
+        <button onclick="addChat()">👤 Chat Pribadi</button>
+        <button onclick="createGroup()">👥 Buat Grup</button>
+        <button onclick="createCommunity()">🌐 Buat Komunitas</button>
+      </div>
+      <button class="fab" onclick="toggleFab()">+</button>
+    </div>
+  </div>
+
+  <div id="room-screen">
+    <div class="room-header">
+      <button class="back-btn" onclick="closeRoom()">&#8592;</button>
+      <b id="room-target-name" class="room-name">Target</b>
+      <span id="room-type-badge"></span>
+    </div>
+    
+    <div class="messages" id="messages-container"></div>
+    <div class="typing-indicator" id="typing-indicator">
+      <span id="typing-user" style="margin-right: 5px;">Seseorang</span> sedang mengetik
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+
+    <div class="input-area">
+      <input type="file" id="file-input" style="display: none;" accept="image/*,video/*,audio/*" onchange="uploadFile()">
+      <button class="file-btn" onclick="document.getElementById('file-input').click()" title="Kirim Media">📎</button>
+      <input type="text" id="message-input" placeholder="Ketik pesan..." autocomplete="off" onkeypress="if(event.key==='Enter') sendMessage()" oninput="handleTyping()">
+      <button class="send-btn" onclick="sendMessage()">&#10148;</button>
+    </div>
+  </div>
+
+<script>
+  const socket = io();
+  let currentUser = '';
+  let currentTarget = '';
+  let isOwner = false;
+  let typingTimeout;
+  let isGroup = false;
+
+  function cleanName(name) {
+    if (!name) return '';
+    return name.replace(/\s+/g, '').toLowerCase();
+  }
+
+  if ("Notification" in window) { Notification.requestPermission(); }
+
+  window.onload = function() {
+    let savedUser = localStorage.getItem('cxo_chat_user');
+    if (savedUser) {
+      let cleaned = cleanName(savedUser);
+      localStorage.setItem('cxo_chat_user', cleaned); 
+      currentUser = cleaned;
+      socket.emit('login', cleaned);
+    }
+  };
+
+  function login() {
+    const username = document.getElementById('username-input').value;
+    const clean = cleanName(username);
+    if (!clean) return alert('Username tidak boleh kosong!');
+    currentUser = clean;
+    localStorage.setItem('cxo_chat_user', clean);
+    socket.emit('login', clean);
+  }
+
+  function logout() {
+    localStorage.removeItem('cxo_chat_user');
+    location.reload();
+  }
+
+  socket.on('login_success', (data) => {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'flex';
+    let nameHtml = data.username;
+    if (data.isOwner) { isOwner = true; nameHtml += ' <span class="owner-badge">OWNER</span>'; }
+    document.getElementById('my-name').innerHTML = nameHtml;
+    if (data.myGroups) data.myGroups.forEach(grp => addToSidebar(grp.id, 'Grup Baru', grp.name, grp.type));
+  });
+
+  socket.on('all_users', (users) => {
+    if (!isOwner) return;
+    users.forEach(user => {
+      let cName = cleanName(user);
+      if (cName !== currentUser) addToSidebar(cName, '', cName, 'user');
+    });
+  });
+
+  socket.on('group_created', (grp) => addToSidebar(grp.id, 'Grup berhasil dibuat', grp.name, grp.type));
+  socket.on('new_group_added', (grp) => addToSidebar(grp.id, 'Anda ditambahkan ke grup ini', grp.name, grp.type));
+
+  function addToSidebar(id, lastMessage = '', displayName = '', type = 'user') {
+    let list = document.getElementById('chat-list');
+    let existing = document.getElementById(`chat-${id}`);
+    let previewText = lastMessage || (type === 'user' ? 'Ketuk untuk chat' : 'Ketuk untuk buka');
+    
+    if (existing) {
+      if (lastMessage) existing.querySelector('.chat-preview').innerText = previewText;
+    } else {
+      document.getElementById('empty-text').style.display = 'none';
+      let item = document.createElement('div');
+      item.className = 'chat-item';
+      item.id = `chat-${id}`;
+      item.onclick = () => openChat(id, displayName || id, type);
+      let avatarClass = type === 'user' ? 'avatar' : 'avatar grp';
+      let badge = type !== 'user' ? `<span class="group-badge">${type.toUpperCase()}</span>` : '';
+      item.innerHTML = `
+        <div class="${avatarClass}">${displayName.charAt(0)}</div>
+        <div class="chat-info">
+          <div class="chat-name">${displayName} ${badge}</div>
+          <div class="chat-preview">${previewText}</div>
+        </div>
+      `;
+      list.appendChild(item);
+    }
+  }
+
+  function openChat(id, displayName, type) {
+    currentTarget = id;
+    isGroup = type !== 'user';
+    document.getElementById('room-target-name').innerText = displayName;
+    let badgeEl = document.getElementById('room-type-badge');
+    if (isGroup) badgeEl.innerHTML = `<span class="group-badge">${type.toUpperCase()}</span>`;
+    else badgeEl.innerHTML = '';
+    document.getElementById('room-screen').style.display = 'flex';
+    socket.emit('get_history', currentTarget);
+  }
+
+  socket.on('history_loaded', (data) => {
+    if (data.target !== currentTarget) return;
+    const container = document.getElementById('messages-container');
+    container.innerHTML = '';
+    data.messages.forEach(msg => {
+      const msgSender = cleanName(msg.from);
+      const isMe = (msgSender === currentUser);
+      renderMessage(msg, isMe ? 'sent' : 'received');
+    });
+    setTimeout(scrollToBottom, 100);
+  });
+
+  function closeRoom() {
+    document.getElementById('room-screen').style.display = 'none';
+    currentTarget = '';
+  }
+
+  function toggleFab() {
+    const menu = document.getElementById('fab-menu');
+    menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+  }
+
+  function addChat() {
+    toggleFab();
+    const target = prompt('Masukkan username yang ingin dichat:');
+    let cleanTarget = cleanName(target);
+    if (!cleanTarget || cleanTarget === currentUser) return;
+    addToSidebar(cleanTarget, '', cleanTarget, 'user');
+    openChat(cleanTarget, cleanTarget, 'user');
+  }
+
+  function createGroup() {
+    toggleFab();
+    const name = prompt('Masukkan Nama Grup:');
+    if (!name) return;
+    const membersStr = prompt('Masukkan username anggota (pisahkan dengan koma):\nContoh: budi, ani');
+    if (!membersStr) return;
+    let members = membersStr.split(',').map(m => cleanName(m)).filter(m => m !== '' && m !== currentUser);
+    socket.emit('create_group', { name, type: 'grup', members });
+  }
+
+  function createCommunity() {
+    toggleFab();
+    const name = prompt('Masukkan Nama Komunitas:');
+    if (!name) return;
+    const membersStr = prompt('Masukkan username anggota (pisahkan dengan koma):\nContoh: budi, ani');
+    if (!membersStr) return;
+    let members = membersStr.split(',').map(m => cleanName(m)).filter(m => m !== '' && m !== currentUser);
+    socket.emit('create_group', { name, type: 'komunitas', members });
+  }
+
+  async function uploadFile() {
+    const fileInput = document.getElementById('file-input');
+    const file = fileInput.files[0];
+    if (!file || !currentTarget) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      socket.emit('send_message', { target: currentTarget, message: '', fileUrl: data.url, fileType: data.type });
+    } catch (err) { alert('Gagal upload file!'); }
+    fileInput.value = '';
+  }
+
+  function sendMessage() {
+    const input = document.getElementById('message-input');
+    const text = input.value.trim();
+    if (!text || !currentTarget) return;
+    socket.emit('send_message', { target: currentTarget, message: text });
+    input.value = '';
+    addToSidebar(currentTarget, text, document.getElementById('room-target-name').innerText, isGroup ? 'grup' : 'user');
+  }
+
+  socket.on('message_received', (data) => {
+    const senderName = cleanName(data.msg.from);
+    const isMe = (senderName === currentUser);
+    if (data.target === currentTarget) {
+      renderMessage(data.msg, isMe ? 'sent' : 'received');
+      scrollToBottom();
+    } else {
+      if (!isMe && Notification.permission === "granted") {
+        new Notification(`Pesan dari ${data.msg.from}`, { body: data.msg.text || 'Mengirim media' });
+      }
+    }
+    let sidebarId = isGroup ? currentTarget : (isMe ? data.target : senderName);
+    let displayName = document.getElementById(`chat-${sidebarId}`)?.querySelector('.chat-name')?.innerText || sidebarId;
+    addToSidebar(sidebarId, data.msg.text || '📷 Media', displayName, isGroup ? 'grup' : 'user');
+  });
+
+  function renderMessage(msg, type) {
+    const div = document.createElement('div');
+    div.className = `msg ${type}`;
+    let content = '';
+    if (isGroup && type === 'received') content += `<div class="sender-name">${msg.from}</div>`;
+    if (msg.fileUrl) {
+      if (msg.fileType.startsWith('image/')) content += `<img src="${msg.fileUrl}" alt="Foto">`;
+      else if (msg.fileType.startsWith('video/')) content += `<video src="${msg.fileUrl}" controls></video>`;
+      else if (msg.fileType.startsWith('audio/')) content += `<audio src="${msg.fileUrl}" controls></audio>`;
+    }
+    if (msg.text) content += `<div>${msg.text}</div>`;
+    content += `<div style="font-size:10px; text-align:right; opacity:0.7; margin-top:4px;">${msg.time}</div>`;
+    div.innerHTML = content;
+    document.getElementById('messages-container').appendChild(div);
+  }
+
+  function scrollToBottom() {
+    const container = document.getElementById('messages-container');
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function handleTyping() {
+    if (!currentTarget) return;
+    socket.emit('typing', { target: currentTarget, username: currentUser });
+  }
+
+  socket.on('user_typing', (data) => {
+    if (data.target === currentTarget && data.username !== currentUser) {
+      const ind = document.getElementById('typing-indicator');
+      document.getElementById('typing-user').innerText = data.username;
+      ind.style.display = 'flex';
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => { ind.style.display = 'none'; }, 2000);
+    }
+  });
+</script>
+</body>
+</html>
